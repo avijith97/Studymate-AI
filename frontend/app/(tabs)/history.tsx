@@ -96,35 +96,41 @@ export default function HistoryScreen() {
           items.map((item, idx) => {
             const meta = TYPE_META[item.type];
             return (
-              <TouchableOpacity
+              <View
                 key={item.id}
-                onPress={() => handleOpen(item)}
-                onLongPress={() => handleDelete(item)}
-                activeOpacity={0.85}
                 style={[styles.row, shadow.hard, { backgroundColor: meta.color }]}
                 testID={`history-row-${idx}`}
               >
-                <View style={styles.rowIcon}>
-                  <Feather name={meta.icon} size={20} color={colors.textPrimary} />
-                </View>
-                <View style={{ flex: 1 }}>
-                  <Text style={styles.tag}>{meta.label.toUpperCase()}</Text>
-                  <Text style={styles.title} numberOfLines={2}>
-                    {item.title}
-                  </Text>
-                  <Text style={styles.date}>
-                    {new Date(item.created_at).toLocaleString()}
-                  </Text>
-                </View>
+                <TouchableOpacity
+                  onPress={() => handleOpen(item)}
+                  onLongPress={() => handleDelete(item)}
+                  activeOpacity={0.85}
+                  style={styles.rowMain}
+                  testID={`history-open-${idx}`}
+                >
+                  <View style={styles.rowIcon}>
+                    <Feather name={meta.icon} size={20} color={colors.textPrimary} />
+                  </View>
+                  <View style={{ flex: 1 }}>
+                    <Text style={styles.tag}>{meta.label.toUpperCase()}</Text>
+                    <Text style={styles.title} numberOfLines={2}>
+                      {item.title}
+                    </Text>
+                    <Text style={styles.date}>
+                      {new Date(item.created_at).toLocaleString()}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
                 <TouchableOpacity
                   onPress={() => handleDelete(item)}
                   style={styles.delBtn}
                   testID={`history-delete-${idx}`}
                   activeOpacity={0.7}
+                  hitSlop={8}
                 >
                   <Feather name="trash-2" size={16} color={colors.textPrimary} />
                 </TouchableOpacity>
-              </TouchableOpacity>
+              </View>
             );
           })
         )}
@@ -181,11 +187,17 @@ const styles = StyleSheet.create({
   row: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
-    padding: 14,
+    gap: 10,
+    padding: 12,
     borderWidth: 3,
     borderColor: colors.border,
     borderRadius: radii.xl,
+  },
+  rowMain: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
   },
   rowIcon: {
     width: 42,

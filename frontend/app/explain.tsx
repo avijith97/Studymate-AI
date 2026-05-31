@@ -57,7 +57,7 @@ export default function ExplainScreen() {
 
   return (
     <View style={styles.root}>
-      <ScreenHeader title="Explain a Concept" subtitle="Topic or paste content — Matrai breaks it down." accent={colors.lavender} />
+      <ScreenHeader title="Explain a Concept" subtitle="Topic or paste content — StudyMateAI breaks it down." accent={colors.lavender} />
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}

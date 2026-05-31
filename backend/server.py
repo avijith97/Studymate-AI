@@ -28,7 +28,7 @@ db = client[os.environ['DB_NAME']]
 EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY", "")
 GEMINI_MODEL = "gemini-3-flash-preview"
 
-app = FastAPI(title="Study Matrai")
+app = FastAPI(title="StudyMateAI")
 api_router = APIRouter(prefix="/api")
 
 # Configure logging
@@ -158,13 +158,13 @@ async def _ask_gemini(system_message: str, user_text: str, image_b64=None, pdf_b
 # ------------------------------------------------------------------
 @api_router.get("/")
 async def root():
-    return {"message": "Study Matrai API is running"}
+    return {"message": "StudyMateAI API is running"}
 
 
 @api_router.post("/explain")
 async def explain_concept(req: ExplainRequest):
     system = (
-        "You are Study Matrai, a friendly study assistant for students. "
+        "You are StudyMateAI, a friendly study assistant for students. "
         "Explain concepts clearly with simple language, real-world analogies, and structure. "
         "Use short paragraphs, bullet points for key ideas, and a quick recap at the end. "
         "If an image or PDF is provided, base the explanation on its content."
@@ -203,7 +203,7 @@ async def summarize_content(req: SummarizeRequest):
         raise HTTPException(status_code=400, detail="Provide text, image, or pdf")
 
     system = (
-        "You are Study Matrai's summarizer. Produce a concise, scannable summary: "
+        "You are StudyMateAI's summarizer. Produce a concise, scannable summary: "
         "1) a TL;DR sentence, 2) 5-8 bullet key points, 3) 'Why it matters' line. "
         "Use markdown. Bold the most important terms."
     )
@@ -233,7 +233,7 @@ async def generate_quiz(req: QuizRequest):
 
     n = max(3, min(req.num_questions or 5, 10))
     system = (
-        "You are Study Matrai's quiz generator. Create multiple choice questions to test understanding. "
+        "You are StudyMateAI's quiz generator. Create multiple choice questions to test understanding. "
         "Return ONLY valid JSON, no markdown fences, no commentary. "
         "Format: a JSON array of objects with keys: question (string), options (array of 4 strings), "
         "correct_index (integer 0-3), explanation (short string)."
@@ -282,7 +282,7 @@ async def generate_flashcards(req: FlashcardsRequest):
 
     n = max(4, min(req.num_cards or 8, 15))
     system = (
-        "You are Study Matrai's flashcard maker. Create clear, atomic flashcards. "
+        "You are StudyMateAI's flashcard maker. Create clear, atomic flashcards. "
         "Return ONLY valid JSON, no markdown fences. "
         "Format: a JSON array of objects with keys: front (the term/question, short), "
         "back (concise definition with 1 mnemonic or example, max ~40 words)."

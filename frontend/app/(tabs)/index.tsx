@@ -38,7 +38,7 @@ export default function Home() {
       <SafeAreaView edges={["top"]} style={{ backgroundColor: colors.mint }}>
         <View style={styles.heroWrap}>
           <View style={{ flex: 1 }}>
-            <Text style={styles.eyebrow}>STUDY MATRAI</Text>
+            <Text style={styles.eyebrow}>STUDYMATE AI</Text>
             <Text style={styles.h1}>Hey, Scholar.{"\n"}Let{"'"}s crush it.</Text>
             <Text style={styles.sub}>
               No login. No fuss. Tap below to start studying instantly.
@@ -156,7 +156,7 @@ export default function Home() {
               <Feather name="info" size={18} color={colors.textPrimary} />
             </View>
             <Text style={[styles.cardBody, { flex: 1 }]}>
-              Tip: upload a PDF or snap a photo of your notes. Matrai understands images and documents too.
+              Tip: upload a PDF or snap a photo of your notes. StudyMateAI understands images and documents too.
             </Text>
           </View>
         </BrutalCard>
