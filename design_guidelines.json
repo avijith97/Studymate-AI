@@ -1,0 +1,114 @@
+{
+  "theme": "light",
+  "archetype": "3 (Pastel & Soft) with Neo-Brutalist Contrast",
+  "design_philosophy": "Gen Z focused neo-brutalism. High-contrast color blocks with stark, raw surfaces, chunky typography, and visible black borders. Overlaps with modern mobile ergonomics like thumb-friendly layouts, tactile haptics, and layered depth.",
+  "typography": {
+    "heading_font": "Outfit",
+    "body_font": "Figtree",
+    "font_pairings": "Outfit for all Headings (H1-H4) and large numbers. Figtree for body copy and UI labels.",
+    "scale": {
+      "h1": "text-4xl md:text-5xl font-black tracking-tighter leading-none",
+      "h2": "text-2xl md:text-3xl font-bold tracking-tight",
+      "h3": "text-xl md:text-2xl font-bold",
+      "h4": "text-lg md:text-xl font-semibold",
+      "body": "text-base font-medium leading-relaxed",
+      "small": "text-sm font-bold uppercase tracking-[0.1em]"
+    }
+  },
+  "colors": {
+    "background": "#FFFDF7",
+    "surface": "#FFFFFF",
+    "text_primary": "#0A0A0A",
+    "text_secondary": "#4A4A4A",
+    "border_hard": "#000000",
+    "accents": {
+      "mint": "#C4F1DE",
+      "lavender": "#E2D5F8",
+      "peach": "#FFD1C1",
+      "sun_yellow": "#FFE885",
+      "vibrant_blue": "#3B82F6"
+    }
+  },
+  "spacing_and_layout": {
+    "general": "Mobile-first approach (max-w-md mx-auto for desktop view). Generous padding inside containers (p-6). Elements should have breathing room.",
+    "borders": "Use border-2 or border-[3px] border-black for all interactive elements and cards.",
+    "shadows": "Neo-brutalist hard shadows: shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]. Active state: translate-y-[4px] translate-x-[4px] shadow-[0px_0px_0px_0px_rgba(0,0,0,1)].",
+    "radius": "rounded-xl or rounded-2xl for a friendly touch contrasting with the hard borders.",
+    "grid": "Bento-style grids on dashboard. Mix large and small squares."
+  },
+  "components": {
+    "buttons": {
+      "primary": "bg-[#FFE885] border-2 border-black text-black font-bold py-3 px-6 rounded-xl shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:bg-[#FFD1C1] active:translate-y-1 active:translate-x-1 active:shadow-[0px_0px_0px_0px_rgba(0,0,0,1)] transition-all",
+      "secondary": "bg-white border-2 border-black text-black font-bold py-3 px-6 rounded-xl shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] hover:bg-[#E2D5F8] active:translate-y-1 active:translate-x-1 active:shadow-[0px_0px_0px_0px_rgba(0,0,0,1)] transition-all"
+    },
+    "cards": "bg-white border-[3px] border-black rounded-2xl shadow-[6px_6px_0px_0px_rgba(0,0,0,1)] p-6. Overflow hidden for internal images.",
+    "inputs": "bg-white border-2 border-black rounded-xl p-4 text-base focus:outline-none focus:ring-4 focus:ring-[#C4F1DE] focus:border-black transition-all",
+    "bottom_nav": "fixed bottom-4 left-4 right-4 bg-white border-2 border-black rounded-2xl shadow-[4px_4px_0px_0px_rgba(0,0,0,1)] flex justify-around p-3 z-50",
+    "tags": "bg-[#C4F1DE] border-2 border-black rounded-full px-3 py-1 text-xs font-black uppercase tracking-wider"
+  },
+  "animations": {
+    "micro_interactions": "Use Framer Motion for tap states (scale: 0.95). Spring physics for opening bottom sheets.",
+    "flashcards": "3D flip animation using Framer Motion (rotateY). Maintain hard border on both sides.",
+    "page_transitions": "Slide up from bottom with slight fade in."
+  },
+  "screens": {
+    "home_dashboard": {
+      "header": "Welcome message with mascot image on the right. Large H1 greeting.",
+      "exam_countdown": "Horizontal scroll of cards featuring hourglass_3d image. Vibrant bg colors (mint, peach) per card. Big bold countdown numbers.",
+      "quick_actions": "Bento grid (2 columns). Explain (lavender), Summarize (yellow), Quiz (mint), Flashcards (peach). Big icons, chunky text."
+    },
+    "explain_concept": {
+      "layout": "Chat-style interface or stacked cards. Bottom fixed area for typing/uploading photo.",
+      "ai_response": "Rendered in a card with background_texture as a subtle background. Highlight key terms with yellow background and black text."
+    },
+    "summarize_content": {
+      "upload_zone": "Large dashed border-[3px] border-black rounded-2xl bg-[#E2D5F8]/50 p-8 flex flex-col items-center justify-center.",
+      "output": "Accordion-style summary points to keep content scannable on mobile."
+    },
+    "quiz": {
+      "question_card": "Massive card at the top, highly legible.",
+      "answers": "Stack of 4 chunky buttons. On select, change bg to green (correct) or red (incorrect) with heavy black borders."
+    },
+    "flashcards": {
+      "layout": "Swipeable stack (Tinder-style) or single massive card in center.",
+      "flip": "Tap to flip. Front: Concept. Back: Definition + mnemonic."
+    }
+  },
+  "assets": {
+    "icons_library": "lucide-react with strokeWidth={2.5} or {3} to match neo-brutalism.",
+    "images": [
+      {
+        "category": "mascot",
+        "url": "https://static.prod-images.emergentagent.com/jobs/885da1fa-d1d8-4c4f-8b9d-630ac5be484d/images/96fb81e04ebf26e6a02962745d74ef2408720e05aad71071982746674a3b8b63.png",
+        "description": "Neo-brutalist floating brain over books. Use in onboarding or home dashboard header."
+      },
+      {
+        "category": "background_texture",
+        "url": "https://static.prod-images.emergentagent.com/jobs/885da1fa-d1d8-4c4f-8b9d-630ac5be484d/images/01dd2cd71da0de157d10f15efa5763e418c032af7bd488791630a0cdebb03fb1.png",
+        "description": "Mint abstract brutalist background. Use as card background for AI explanations or hero section."
+      },
+      {
+        "category": "exam_countdown",
+        "url": "https://static.prod-images.emergentagent.com/jobs/885da1fa-d1d8-4c4f-8b9d-630ac5be484d/images/d56ffe0a2769c84a80ef8d5a7de466ed78fbc5e13a75510ee199604f416cc411.png",
+        "description": "3D hourglass. Use in the Exam Countdown widgets/cards."
+      }
+    ]
+  },
+  "accessibility": {
+    "contrast": "Strict adherence to high contrast. Black text on pastel backgrounds passes WCAG effortlessly.",
+    "touch_targets": "Minimum 48x48px for all interactive elements. Buttons are padded heavily.",
+    "motion": "Respect prefers-reduced-motion for flashcard flips and page transitions."
+  },
+  "instructions_to_main_agent": [
+    "Build as a mobile-first web app using React, Tailwind, and Shadcn components, prioritizing small screen layouts (max-w-md mx-auto).",
+    "Apply neo-brutalist styling globally: use 'border-2 border-black' or 'border-[3px] border-black' and hard shadows 'shadow-[4px_4px_0px_0px_rgba(0,0,0,1)]' on cards and buttons.",
+    "Never use generic light-gray borders or soft drop shadows.",
+    "Include 'lucide-react' icons with 'strokeWidth={2.5}'.",
+    "Implement the bottom navigation bar fixed at the bottom with high contrast.",
+    "For inputs, include a camera icon to signify the OCR/Photo upload feature.",
+    "Ensure all interactive elements have data-testid attributes (e.g., data-testid='quiz-option-a').",
+    "Ensure the layout doesn't require a login screen. The initial route should be the Home Dashboard.",
+    "Use Framer Motion for tap states (scale: 0.95) and flashcard flips.",
+    "Use the provided image URLs strictly for their designated categories."
+  ]
+}
