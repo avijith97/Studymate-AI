@@ -67,18 +67,10 @@ export default function ExamsScreen() {
     setModalOpen(false);
   };
 
-  const handleRemove = (e: Exam) =>
-    Alert.alert("Remove exam?", e.name, [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Remove",
-        style: "destructive",
-        onPress: async () => {
-          await removeExam(e.id);
-          await refresh();
-        },
-      },
-    ]);
+  const handleRemove = async (e: Exam) => {
+    await removeExam(e.id);
+    await refresh();
+  };
 
   return (
     <View style={styles.root}>

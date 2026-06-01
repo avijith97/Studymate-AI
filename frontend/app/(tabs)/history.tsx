@@ -61,18 +61,10 @@ export default function HistoryScreen() {
     }
   };
 
-  const handleDelete = (item: HistoryItem) =>
-    Alert.alert("Delete?", item.title, [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Delete",
-        style: "destructive",
-        onPress: async () => {
-          await removeHistory(item.id);
-          setItems(await getHistory());
-        },
-      },
-    ]);
+  const handleDelete = async (item: HistoryItem) => {
+    await removeHistory(item.id);
+    setItems(await getHistory());
+  };
 
   return (
     <View style={styles.root}>
