@@ -1,10 +1,11 @@
 import * as ImagePicker from "expo-image-picker";
 import * as DocumentPicker from "expo-document-picker";
+import * as FileSystem from "expo-file-system/legacy";
 import { Alert, Linking, Platform } from "react-native";
 
 const isWebPlatform = Platform.OS === "web";
 
-// ---------- Web: trigger a hidden <input type="file"> ----------
+// ---------- Web: hidden <input type="file"> ----------
 function webPickFile(accept: string, capture?: "environment"): Promise<File | null> {
   return new Promise((resolve) => {
     if (typeof document === "undefined") {
@@ -30,7 +31,6 @@ function webPickFile(accept: string, capture?: "environment"): Promise<File | nu
       cleanup();
       resolve(file);
     };
-    // Some browsers fire `cancel` event when the user closes without picking
     input.addEventListener("change", handleChange, { once: true });
     (input as any).addEventListener?.("cancel", () => {
       if (settled) return;
@@ -41,10 +41,6 @@ function webPickFile(accept: string, capture?: "environment"): Promise<File | nu
 
     document.body.appendChild(input);
     input.click();
-
-    // Safety fallback if no event fires within a long window (e.g. user closed
-    // dialog and browser didn't fire cancel) — leave the input around for up
-    // to 5 minutes, then clean up.
     setTimeout(() => {
       if (!settled) {
         settled = true;
@@ -55,7 +51,7 @@ function webPickFile(accept: string, capture?: "environment"): Promise<File | nu
   });
 }
 
-function fileToBase64FromBlob(blob: Blob): Promise<string> {
+function blobToBase64(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onloadend = () => {
@@ -68,10 +64,12 @@ function fileToBase64FromBlob(blob: Blob): Promise<string> {
   });
 }
 
-async function uriToBase64(uri: string): Promise<string> {
-  const res = await fetch(uri);
-  const blob = await res.blob();
-  return await fileToBase64FromBlob(blob);
+async function readNativeFileAsBase64(uri: string): Promise<string> {
+  // expo-file-system's readAsStringAsync is the most reliable way to read
+  // local file:// and content:// URIs into base64 on iOS/Android.
+  return await FileSystem.readAsStringAsync(uri, {
+    encoding: FileSystem.EncodingType.Base64,
+  });
 }
 
 function openSettingsAlert(feature: string) {
@@ -91,22 +89,26 @@ export async function pickImageFromCamera(): Promise<string | null> {
     if (isWebPlatform) {
       const file = await webPickFile("image/*", "environment");
       if (!file) return null;
-      return await fileToBase64FromBlob(file);
+      return await blobToBase64(file);
     }
     const perm = await ImagePicker.requestCameraPermissionsAsync();
     if (!perm.granted) {
-      if (!perm.canAskAgain) openSettingsAlert("Camera");
+      if (perm.canAskAgain === false) openSettingsAlert("Camera");
       else Alert.alert("Camera access denied", "Allow camera access to snap your notes.");
       return null;
     }
     const res = await ImagePicker.launchCameraAsync({
       mediaTypes: ["images"],
       quality: 0.6,
+      base64: true,
     });
-    if (res.canceled || !res.assets?.[0]?.uri) return null;
-    return await uriToBase64(res.assets[0].uri);
+    if (res.canceled || !res.assets?.[0]) return null;
+    const asset = res.assets[0];
+    if (asset.base64) return asset.base64;
+    if (asset.uri) return await readNativeFileAsBase64(asset.uri);
+    return null;
   } catch (e: any) {
-    Alert.alert("Camera not available", e?.message ?? "Try gallery or PDF instead.");
+    Alert.alert("Camera not available", String(e?.message ?? e ?? "Try gallery or PDF instead."));
     return null;
   }
 }
@@ -116,22 +118,26 @@ export async function pickImageFromLibrary(): Promise<string | null> {
     if (isWebPlatform) {
       const file = await webPickFile("image/*");
       if (!file) return null;
-      return await fileToBase64FromBlob(file);
+      return await blobToBase64(file);
     }
     const perm = await ImagePicker.requestMediaLibraryPermissionsAsync();
     if (!perm.granted) {
-      if (!perm.canAskAgain) openSettingsAlert("Photo library");
+      if (perm.canAskAgain === false) openSettingsAlert("Photo library");
       else Alert.alert("Photo access denied", "Allow photo library access to pick an image.");
       return null;
     }
     const res = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ["images"],
       quality: 0.6,
+      base64: true,
     });
-    if (res.canceled || !res.assets?.[0]?.uri) return null;
-    return await uriToBase64(res.assets[0].uri);
+    if (res.canceled || !res.assets?.[0]) return null;
+    const asset = res.assets[0];
+    if (asset.base64) return asset.base64;
+    if (asset.uri) return await readNativeFileAsBase64(asset.uri);
+    return null;
   } catch (e: any) {
-    Alert.alert("Couldn't open gallery", e?.message ?? "Try again.");
+    Alert.alert("Couldn't open gallery", String(e?.message ?? e ?? "Try again."));
     return null;
   }
 }
@@ -141,7 +147,7 @@ export async function pickPdf(): Promise<{ name: string; base64: string } | null
     if (isWebPlatform) {
       const file = await webPickFile("application/pdf");
       if (!file) return null;
-      const base64 = await fileToBase64FromBlob(file);
+      const base64 = await blobToBase64(file);
       return { name: file.name || "document.pdf", base64 };
     }
     const res = await DocumentPicker.getDocumentAsync({
@@ -151,10 +157,10 @@ export async function pickPdf(): Promise<{ name: string; base64: string } | null
     });
     if (res.canceled || !res.assets?.[0]?.uri) return null;
     const asset = res.assets[0];
-    const base64 = await uriToBase64(asset.uri);
+    const base64 = await readNativeFileAsBase64(asset.uri);
     return { name: asset.name ?? "document.pdf", base64 };
   } catch (e: any) {
-    Alert.alert("Couldn't open file picker", e?.message ?? "Try again.");
+    Alert.alert("Couldn't open PDF picker", String(e?.message ?? e ?? "Try again."));
     return null;
   }
 }

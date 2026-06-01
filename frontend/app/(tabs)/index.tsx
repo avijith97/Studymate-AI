@@ -39,9 +39,9 @@ export default function Home() {
         <View style={styles.heroWrap}>
           <View style={{ flex: 1 }}>
             <Text style={styles.eyebrow}>STUDYMATE AI</Text>
-            <Text style={styles.h1}>Hey, Scholar.{"\n"}Let{"'"}s crush it.</Text>
+            <Text style={styles.h1}>Learn smarter{"\n"}with AI.</Text>
             <Text style={styles.sub}>
-              No login. No fuss. Tap below to start studying instantly.
+              Get instant explanations, personalized study support, and help whenever you need it.
             </Text>
           </View>
           <Image source={{ uri: MASCOT }} style={styles.mascot} resizeMode="contain" />
