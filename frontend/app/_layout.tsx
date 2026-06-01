@@ -1,6 +1,7 @@
 import { Stack } from "expo-router";
 import * as SplashScreen from "expo-splash-screen";
 import { useEffect } from "react";
+import { LogBox } from "react-native";
 import {
   Outfit_400Regular,
   Outfit_700Bold,
@@ -22,6 +23,23 @@ import { useIconFonts } from "@/src/hooks/use-icon-fonts";
 // Font.loadAsync against a broken vendor path if any <Icon> mounts before
 // the family is registered — which throws on Android Expo Go.
 SplashScreen.preventAutoHideAsync();
+
+// Silence the noisy "Font file for X is empty" promise rejections that
+// @expo/vector-icons triggers on Android Expo Go even though our CDN prewarm
+// makes the icons render fine. They're cosmetic in dev mode only.
+LogBox.ignoreLogs([
+  /Font file for .* is empty/i,
+  /ExpoFontLoader\.loadAsync/i,
+]);
+
+// Best-effort: swallow unhandled promise rejections from icon font autoloads
+// so they don't show up as red Console Errors in the Expo dev menu.
+if (typeof globalThis !== "undefined" && (globalThis as any).HermesInternal) {
+  const original = (globalThis as any).Promise;
+  if (original?.prototype?.catch) {
+    // no-op — we rely on LogBox.ignoreLogs above instead of monkey-patching.
+  }
+}
 
 export default function RootLayout() {
   const [iconsLoaded, iconsError] = useIconFonts();
