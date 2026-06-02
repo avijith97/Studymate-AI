@@ -21,9 +21,9 @@ export default function TabsLayout() {
           backgroundColor: "#fff",
           borderTopWidth: 3,
           borderTopColor: colors.border,
-          height: Platform.OS === "ios" ? 88 : 68,
-          paddingTop: 8,
-          paddingBottom: Platform.OS === "ios" ? 28 : 10,
+          height: Platform.OS === "ios" ? 104 : 88,
+          paddingTop: 10,
+          paddingBottom: Platform.OS === "ios" ? 40 : 24,
           ...shadow.hard,
         },
       }}

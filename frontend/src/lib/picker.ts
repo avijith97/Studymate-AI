@@ -99,14 +99,12 @@ export async function pickImageFromCamera(): Promise<string | null> {
     }
     const res = await ImagePicker.launchCameraAsync({
       mediaTypes: ["images"],
-      quality: 0.6,
-      base64: true,
+      quality: 0.5,
+      allowsEditing: false,
     });
-    if (res.canceled || !res.assets?.[0]) return null;
+    if (res.canceled || !res.assets?.[0]?.uri) return null;
     const asset = res.assets[0];
-    if (asset.base64) return asset.base64;
-    if (asset.uri) return await readNativeFileAsBase64(asset.uri);
-    return null;
+    return await readNativeFileAsBase64(asset.uri);
   } catch (e: any) {
     Alert.alert("Camera not available", String(e?.message ?? e ?? "Try gallery or PDF instead."));
     return null;
@@ -128,14 +126,12 @@ export async function pickImageFromLibrary(): Promise<string | null> {
     }
     const res = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ["images"],
-      quality: 0.6,
-      base64: true,
+      quality: 0.5,
+      allowsEditing: false,
     });
-    if (res.canceled || !res.assets?.[0]) return null;
+    if (res.canceled || !res.assets?.[0]?.uri) return null;
     const asset = res.assets[0];
-    if (asset.base64) return asset.base64;
-    if (asset.uri) return await readNativeFileAsBase64(asset.uri);
-    return null;
+    return await readNativeFileAsBase64(asset.uri);
   } catch (e: any) {
     Alert.alert("Couldn't open gallery", String(e?.message ?? e ?? "Try again."));
     return null;
