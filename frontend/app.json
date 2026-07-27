@@ -13,7 +13,8 @@
       "infoPlist": {
         "NSCameraUsageDescription": "Snap photos of your notes to study them",
         "NSPhotoLibraryUsageDescription": "Pick images of your notes from your library"
-      }
+      },
+      "bundleIdentifier": "com.studymateai.app"
     },
     "android": {
       "adaptiveIcon": {
@@ -21,7 +22,12 @@
         "backgroundColor": "#FFFDF7"
       },
       "edgeToEdgeEnabled": true,
-      "permissions": ["CAMERA", "READ_EXTERNAL_STORAGE", "READ_MEDIA_IMAGES"]
+      "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "READ_MEDIA_IMAGES"
+      ],
+      "package": "com.studymateai.app"
     },
     "web": {
       "bundler": "metro",

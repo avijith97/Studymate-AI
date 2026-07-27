@@ -2,19 +2,20 @@ from fastapi import FastAPI, APIRouter, HTTPException
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
+from starlette.concurrency import run_in_threadpool
 import os
 import re
 import json
 import base64
 import logging
-import tempfile
 import uuid
 from pathlib import Path
 from datetime import datetime, timezone
 from typing import List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
-from emergentintegrations.llm.chat import LlmChat, UserMessage, FileContentWithMimeType, ImageContent
+from google import genai
+from google.genai import types
 
 
 ROOT_DIR = Path(__file__).parent
@@ -25,18 +26,22 @@ mongo_url = os.environ['MONGO_URL']
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ['DB_NAME']]
 
-EMERGENT_LLM_KEY = os.environ.get("EMERGENT_LLM_KEY", "")
-GEMINI_MODEL = "gemini-3-flash-preview"
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+GEMINI_MODEL = "gemini-flash-latest"
 
 app = FastAPI(title="StudyMateAI")
 api_router = APIRouter(prefix="/api")
 
-# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Initialize Gemini client once (Developer API)
+if not GEMINI_API_KEY:
+    logger.warning("GEMINI_API_KEY missing — endpoints will 500 until it's set")
+genai_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
 
 # ------------------------------------------------------------------
@@ -45,9 +50,9 @@ logger = logging.getLogger(__name__)
 class ExplainRequest(BaseModel):
     topic: Optional[str] = None
     text: Optional[str] = None
-    image_base64: Optional[str] = None  # JPEG/PNG bytes (base64-encoded)
-    pdf_base64: Optional[str] = None    # PDF bytes (base64-encoded)
-    level: Optional[str] = "student"     # student | beginner | advanced
+    image_base64: Optional[str] = None
+    pdf_base64: Optional[str] = None
+    level: Optional[str] = "student"
 
 
 class SummarizeRequest(BaseModel):
@@ -88,69 +93,61 @@ class Flashcard(BaseModel):
 # Helpers
 # ------------------------------------------------------------------
 def _extract_json(text: str):
-    """Strip markdown fences and parse JSON. Tries to recover with regex if needed."""
-    cleaned = text.strip()
-    # Remove ```json ... ``` or ``` ... ``` fences
+    cleaned = (text or "").strip()
     cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
     cleaned = re.sub(r"\s*```\s*$", "", cleaned)
     try:
         return json.loads(cleaned)
     except Exception:
-        # Try first {...} or [...] block
         match = re.search(r"(\[.*\]|\{.*\})", cleaned, flags=re.DOTALL)
         if match:
             return json.loads(match.group(1))
         raise
 
 
-def _write_temp_file(data_b64: str, suffix: str) -> str:
-    raw = base64.b64decode(data_b64)
-    fd, path = tempfile.mkstemp(suffix=suffix)
-    with os.fdopen(fd, "wb") as f:
-        f.write(raw)
-    return path
-
-
-def _build_attachments(image_base64: Optional[str], pdf_base64: Optional[str]):
-    """Return (file_contents_list, temp_paths_to_cleanup)."""
-    files = []
-    temp_paths = []
-    if pdf_base64:
-        p = _write_temp_file(pdf_base64, ".pdf")
-        temp_paths.append(p)
-        files.append(FileContentWithMimeType(file_path=p, mime_type="application/pdf"))
-    if image_base64:
-        p = _write_temp_file(image_base64, ".jpg")
-        temp_paths.append(p)
-        files.append(FileContentWithMimeType(file_path=p, mime_type="image/jpeg"))
-    return files, temp_paths
-
-
-def _cleanup(paths):
-    for p in paths:
+def _build_parts(text: str, image_b64: Optional[str], pdf_b64: Optional[str]):
+    """Return a list of Gemini content parts. Text goes first, files after."""
+    parts: list = [text]
+    if pdf_b64:
         try:
-            os.remove(p)
-        except Exception:
-            pass
+            pdf_bytes = base64.b64decode(pdf_b64)
+            parts.append(types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"))
+        except Exception as e:
+            logger.warning("Invalid PDF base64: %s", e)
+    if image_b64:
+        try:
+            img_bytes = base64.b64decode(image_b64)
+            parts.append(types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg"))
+        except Exception as e:
+            logger.warning("Invalid image base64: %s", e)
+    return parts
 
 
-async def _ask_gemini(system_message: str, user_text: str, image_b64=None, pdf_b64=None) -> str:
-    if not EMERGENT_LLM_KEY:
-        raise HTTPException(status_code=500, detail="LLM key not configured")
+def _sync_generate(system: str, user_text: str,
+                   image_b64: Optional[str], pdf_b64: Optional[str],
+                   json_mode: bool = False) -> str:
+    if not genai_client:
+        raise HTTPException(status_code=500, detail="GEMINI_API_KEY not configured")
+    contents = _build_parts(user_text, image_b64, pdf_b64)
+    config_kwargs: dict = {"system_instruction": system}
+    if json_mode:
+        config_kwargs["response_mime_type"] = "application/json"
+    cfg = types.GenerateContentConfig(**config_kwargs)
+    resp = genai_client.models.generate_content(
+        model=GEMINI_MODEL,
+        contents=contents,
+        config=cfg,
+    )
+    return resp.text or ""
 
-    chat = LlmChat(
-        api_key=EMERGENT_LLM_KEY,
-        session_id=str(uuid.uuid4()),
-        system_message=system_message,
-    ).with_model("gemini", GEMINI_MODEL)
 
-    files, temp_paths = _build_attachments(image_b64, pdf_b64)
-    try:
-        msg = UserMessage(text=user_text, file_contents=files if files else None)
-        response = await chat.send_message(msg)
-        return response
-    finally:
-        _cleanup(temp_paths)
+async def _ask_gemini(system: str, user_text: str,
+                      image_b64: Optional[str] = None,
+                      pdf_b64: Optional[str] = None,
+                      json_mode: bool = False) -> str:
+    return await run_in_threadpool(
+        _sync_generate, system, user_text, image_b64, pdf_b64, json_mode
+    )
 
 
 # ------------------------------------------------------------------
@@ -180,8 +177,10 @@ async def explain_concept(req: ExplainRequest):
     parts.append("Return a clear explanation in markdown.")
 
     try:
-        explanation = await _ask_gemini("\n\n".join([system]), "\n\n".join(parts),
+        explanation = await _ask_gemini(system, "\n\n".join(parts),
                                         req.image_base64, req.pdf_base64)
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception("explain failed")
         raise HTTPException(status_code=500, detail=f"AI error: {e}")
@@ -211,6 +210,8 @@ async def summarize_content(req: SummarizeRequest):
 
     try:
         summary = await _ask_gemini(system, user, req.image_base64, req.pdf_base64)
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception("summarize failed")
         raise HTTPException(status_code=500, detail=f"AI error: {e}")
@@ -246,7 +247,8 @@ async def generate_quiz(req: QuizRequest):
     parts.append(f"Generate exactly {n} questions. Mix difficulty levels.")
 
     try:
-        raw = await _ask_gemini(system, "\n\n".join(parts), req.image_base64, req.pdf_base64)
+        raw = await _ask_gemini(system, "\n\n".join(parts),
+                                req.image_base64, req.pdf_base64, json_mode=True)
         data = _extract_json(raw)
         if not isinstance(data, list):
             raise ValueError("Expected JSON array")
@@ -260,6 +262,8 @@ async def generate_quiz(req: QuizRequest):
                 continue
         if not questions:
             raise ValueError("No valid questions parsed")
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception("quiz failed")
         raise HTTPException(status_code=500, detail=f"AI error: {e}")
@@ -295,7 +299,8 @@ async def generate_flashcards(req: FlashcardsRequest):
     parts.append(f"Generate exactly {n} flashcards.")
 
     try:
-        raw = await _ask_gemini(system, "\n\n".join(parts), req.image_base64, req.pdf_base64)
+        raw = await _ask_gemini(system, "\n\n".join(parts),
+                                req.image_base64, req.pdf_base64, json_mode=True)
         data = _extract_json(raw)
         if not isinstance(data, list):
             raise ValueError("Expected JSON array")
@@ -309,6 +314,8 @@ async def generate_flashcards(req: FlashcardsRequest):
                 continue
         if not cards:
             raise ValueError("No valid cards parsed")
+    except HTTPException:
+        raise
     except Exception as e:
         logger.exception("flashcards failed")
         raise HTTPException(status_code=500, detail=f"AI error: {e}")
@@ -337,7 +344,6 @@ async def delete_history(item_id: str):
     return {"deleted": res.deleted_count}
 
 
-# Include the router in the main app
 app.include_router(api_router)
 
 app.add_middleware(
