@@ -35,7 +35,6 @@ db = client[os.environ['DB_NAME']]
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 GEMINI_MODEL = "gemini-flash-latest"
 
-app = FastAPI(title="StudyMateAI")
 api_router = APIRouter(prefix="/api")
 
 logging.basicConfig(
