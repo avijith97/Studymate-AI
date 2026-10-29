@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-app = FastAPI()
+app = FastAPI(docs_url="/docs", redoc_url="/redoc")
 @app.get("/")
 def read_root():
   return {"status": "online", "message": "My API is running successfully!"}
