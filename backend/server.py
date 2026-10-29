@@ -2,6 +2,12 @@ from fastapi import FastAPI
 app = FastAPI()
 @app.get("/")
 def read_root():
+  return {"status": "online", "message": "My API is running successfully!"}
+  
+from fastapi import FastAPI
+app = FastAPI()
+@app.get("/")
+def read_root():
   return {"message": "Welcome to my FastAPI application!"}
 from fastapi import FastAPI, APIRouter, HTTPException
 from dotenv import load_dotenv
