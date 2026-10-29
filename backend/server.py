@@ -1,6 +1,4 @@
-@app.get("/")
-def read_root():
-  return {"message": "Welcome to my FastAPI application!"}
+
 from fastapi import FastAPI, APIRouter, HTTPException
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
