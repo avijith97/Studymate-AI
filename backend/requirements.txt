@@ -1,11 +1,7 @@
-google-api-core
-grpcio-status
-google-genai
-fastapi
+google-genai==2.7.0
 uvicorn
 python-dotenv
 motor
-google-genai
 aiohappyeyeballs==2.6.2
 aiohttp==3.13.5
 aiosignal==1.4.0
@@ -34,14 +30,12 @@ flake8==7.3.0
 frozenlist==1.8.0
 fsspec==2026.4.0
 google-ai-generativelanguage==0.6.15
-google-api-core==2.30.3
 google-api-python-client==2.197.0
 google-auth==2.53.0
 google-auth-httplib2==0.4.0
 google-genai==2.7.0
 google-generativeai==0.8.6
 googleapis-common-protos==1.75.0
-grpcio==1.80.0
 grpcio-status==1.71.2
 h11==0.16.0
 hf-xet==1.5.0
@@ -81,7 +75,6 @@ platformdirs==4.10.0
 pluggy==1.6.0
 propcache==0.5.2
 proto-plus==1.28.0
-protobuf==5.29.6
 pyasn1==0.6.3
 pyasn1_modules==0.4.2
 pycodestyle==2.14.0
