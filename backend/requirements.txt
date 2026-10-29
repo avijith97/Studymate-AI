@@ -1,3 +1,6 @@
+google-api-core
+grpcio-status
+google-genai
 fastapi
 uvicorn
 python-dotenv
