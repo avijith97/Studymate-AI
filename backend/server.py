@@ -1,337 +1,363 @@
-
+from fastapi import FastAPI
+app = FastAPI(docs_url="/docs", redoc_url="/redoc")
+@app.get("/")
+def read_root():
+  return {"status": "online", "message": "My API is running successfully!"}
+  
+from fastapi import FastAPI, APIRouter, HTTPException
+from dotenv import load_dotenv
+from starlette.middleware.cors import CORSMiddleware
+from motor.motor_asyncio import AsyncIOMotorClient
+from starlette.concurrency import run_in_threadpool
 import os
 import re
 import json
 import base64
 import logging
-from contextlib import asynccontextmanager
-from typing import Optional
+import uuid
 from pathlib import Path
+from datetime import datetime, timezone
+from typing import List, Optional
+from pydantic import BaseModel
 
-from dotenv import load_dotenv
-from fastapi import FastAPI, APIRouter, HTTPException, Request
-from fastapi.responses import JSONResponse
-from starlette.middleware.cors import CORSMiddleware
-from starlette.concurrency import run_in_threadpool
-from pydantic import BaseModel, Field
 from google import genai
 from google.genai import types
 
+
 ROOT_DIR = Path(__file__).parent
-load_dotenv(ROOT_DIR / ".env")
+load_dotenv(ROOT_DIR / '.env')
 
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("studymate")
+# MongoDB connection
+mongo_url = os.environ['MONGO_URL']
+client = AsyncIOMotorClient(mongo_url)
+db = client[os.environ['DB_NAME']]
 
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 GEMINI_MODEL = "gemini-flash-latest"
 
-genai_client = (
-    genai.Client(api_key=GEMINI_API_KEY, http_options=types.HttpOptions(timeout=90000))
-    if GEMINI_API_KEY else None
+api_router = APIRouter(prefix="/api")
+
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
+logger = logging.getLogger(__name__)
 
-MAX_FILE_SIZE = 10 * 1024 * 1024
+# Initialize Gemini client once (Developer API)
+if not GEMINI_API_KEY:
+    logger.warning("GEMINI_API_KEY missing — endpoints will 500 until it's set")
+genai_client = genai.Client(api_key=GEMINI_API_KEY) if GEMINI_API_KEY else None
 
-class StudyRequest(BaseModel):
+
+# ------------------------------------------------------------------
+# Models
+# ------------------------------------------------------------------
+class ExplainRequest(BaseModel):
     topic: Optional[str] = None
     text: Optional[str] = None
     image_base64: Optional[str] = None
     pdf_base64: Optional[str] = None
-
-class ExplainRequest(StudyRequest):
     level: Optional[str] = "student"
 
-class QuizRequest(StudyRequest):
-    num_questions: int = Field(default=5, ge=3, le=10)
 
-class FlashcardsRequest(StudyRequest):
-    num_cards: int = Field(default=8, ge=4, le=15)
+class SummarizeRequest(BaseModel):
+    text: Optional[str] = None
+    image_base64: Optional[str] = None
+    pdf_base64: Optional[str] = None
+
+
+class QuizRequest(BaseModel):
+    topic: Optional[str] = None
+    text: Optional[str] = None
+    image_base64: Optional[str] = None
+    pdf_base64: Optional[str] = None
+    num_questions: int = 5
+
+
+class FlashcardsRequest(BaseModel):
+    topic: Optional[str] = None
+    text: Optional[str] = None
+    image_base64: Optional[str] = None
+    pdf_base64: Optional[str] = None
+    num_cards: int = 8
+
 
 class QuizItem(BaseModel):
     question: str
-    options: list[str]
+    options: List[str]
     correct_index: int
     explanation: str
+
 
 class Flashcard(BaseModel):
     front: str
     back: str
 
-def validate_input(req):
-    if not any([
-        getattr(req, "topic", None),
-        getattr(req, "text", None),
-        getattr(req, "image_base64", None),
-        getattr(req, "pdf_base64", None),
-    ]):
-        raise HTTPException(status_code=400, detail="Please provide a topic, text, image, or PDF.")
 
-    for value in [getattr(req, "image_base64", None), getattr(req, "pdf_base64", None)]:
-        if value and len(value) > (MAX_FILE_SIZE * 4 // 3 + 1000):
-            raise HTTPException(status_code=413, detail="File is too large. Maximum size is 10 MB.")
-
-def build_parts(text, image_b64=None, pdf_b64=None):
-    parts = [text or ""]
-
-    for value, mime in [
-        (pdf_b64, "application/pdf"),
-        (image_b64, "image/jpeg"),
-    ]:
-        if value:
-            try:
-                decoded = base64.b64decode(value, validate=True)
-                if len(decoded) > MAX_FILE_SIZE:
-                    raise HTTPException(status_code=413, detail="File exceeds 10 MB.")
-                parts.append(types.Part.from_bytes(data=decoded, mime_type=mime))
-            except HTTPException:
-                raise
-            except Exception:
-                raise HTTPException(status_code=400, detail="Invalid attached file.")
-
-    return parts
-
-def extract_json(text):
+# ------------------------------------------------------------------
+# Helpers
+# ------------------------------------------------------------------
+def _extract_json(text: str):
     cleaned = (text or "").strip()
     cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned)
-    cleaned = re.sub(r"\s*```$", "", cleaned)
-
+    cleaned = re.sub(r"\s*```\s*$", "", cleaned)
     try:
         return json.loads(cleaned)
-    except json.JSONDecodeError:
-        match = re.search(r"(\[.*\]|\{.*\})", cleaned, re.DOTALL)
+    except Exception:
+        match = re.search(r"(\[.*\]|\{.*\})", cleaned, flags=re.DOTALL)
         if match:
             return json.loads(match.group(1))
-        raise ValueError("Gemini returned invalid JSON.")
+        raise
 
-def sync_generate(system, user_text, image_b64=None, pdf_b64=None, json_mode=False):
+
+def _build_parts(text: str, image_b64: Optional[str], pdf_b64: Optional[str]):
+    """Return a list of Gemini content parts. Text goes first, files after."""
+    parts: list = [text]
+    if pdf_b64:
+        try:
+            pdf_bytes = base64.b64decode(pdf_b64)
+            parts.append(types.Part.from_bytes(data=pdf_bytes, mime_type="application/pdf"))
+        except Exception as e:
+            logger.warning("Invalid PDF base64: %s", e)
+    if image_b64:
+        try:
+            img_bytes = base64.b64decode(image_b64)
+            parts.append(types.Part.from_bytes(data=img_bytes, mime_type="image/jpeg"))
+        except Exception as e:
+            logger.warning("Invalid image base64: %s", e)
+    return parts
+
+
+def _sync_generate(system: str, user_text: str,
+                   image_b64: Optional[str], pdf_b64: Optional[str],
+                   json_mode: bool = False) -> str:
     if not genai_client:
-        raise HTTPException(status_code=503, detail="Gemini API key is not configured.")
-
-    config = {"system_instruction": system}
+        raise HTTPException(status_code=500, detail="GEMINI_API_KEY not configured")
+    contents = _build_parts(user_text, image_b64, pdf_b64)
+    config_kwargs: dict = {"system_instruction": system}
     if json_mode:
-        config["response_mime_type"] = "application/json"
-
-    response = genai_client.models.generate_content(
+        config_kwargs["response_mime_type"] = "application/json"
+    cfg = types.GenerateContentConfig(**config_kwargs)
+    resp = genai_client.models.generate_content(
         model=GEMINI_MODEL,
-        contents=build_parts(user_text, image_b64, pdf_b64),
-        config=types.GenerateContentConfig(**config),
+        contents=contents,
+        config=cfg,
+    )
+    return resp.text or ""
+
+
+async def _ask_gemini(system: str, user_text: str,
+                      image_b64: Optional[str] = None,
+                      pdf_b64: Optional[str] = None,
+                      json_mode: bool = False) -> str:
+    return await run_in_threadpool(
+        _sync_generate, system, user_text, image_b64, pdf_b64, json_mode
     )
 
-    if not response.text:
-        raise ValueError("Gemini returned an empty response.")
 
-    return response.text
+# ------------------------------------------------------------------
+# Routes
+# ------------------------------------------------------------------
+@api_router.get("/")
+async def root():
+    return {"message": "StudyMateAI API is running"}
 
-async def ask_gemini(system, user_text, image_b64=None, pdf_b64=None, json_mode=False):
+
+@api_router.post("/explain")
+async def explain_concept(req: ExplainRequest):
+    system = (
+        "You are StudyMateAI, a friendly study assistant for students. "
+        "Explain concepts clearly with simple language, real-world analogies, and structure. "
+        "Use short paragraphs, bullet points for key ideas, and a quick recap at the end. "
+        "If an image or PDF is provided, base the explanation on its content."
+    )
+    parts = []
+    if req.topic:
+        parts.append(f"Topic: {req.topic}")
+    if req.text:
+        parts.append(f"Content to explain:\n{req.text}")
+    if not parts and not (req.image_base64 or req.pdf_base64):
+        raise HTTPException(status_code=400, detail="Provide topic, text, image, or pdf")
+    parts.append(f"Audience level: {req.level or 'student'}")
+    parts.append("Return a clear explanation in markdown.")
+
     try:
-        return await run_in_threadpool(
-            sync_generate, system, user_text, image_b64, pdf_b64, json_mode
-        )
+        explanation = await _ask_gemini(system, "\n\n".join(parts),
+                                        req.image_base64, req.pdf_base64)
     except HTTPException:
         raise
-    except Exception:
-        logger.exception("Gemini request failed")
-        raise HTTPException(
-            status_code=502,
-            detail="The AI service could not complete your request. Please try again."
-        )
+    except Exception as e:
+        logger.exception("explain failed")
+        raise HTTPException(status_code=500, detail=f"AI error: {e}")
 
-@asynccontextmanager
-async def lifespan(app):
-    logger.info("StudyMate AI backend starting")
-    yield
-    logger.info("StudyMate AI backend shutting down")
-
-app = FastAPI(
-    title="StudyMate AI API",
-    version="1.0.0",
-    lifespan=lifespan,
-)
-
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-router = APIRouter(prefix="/api")
-
-@app.get("/")
-async def root():
-    return {"status": "online", "message": "StudyMate AI API is running"}
-
-@app.get("/health")
-async def health():
-    return {
-        "status": "healthy",
-        "gemini_configured": genai_client is not None
-    }
-
-@router.post("/explain")
-async def explain(req: ExplainRequest):
-    validate_input(req)
-
-    system = (
-        "You are StudyMate AI, a friendly study assistant. "
-        "Explain concepts clearly with simple language, examples, and a short recap."
-    )
-    user = (
-        f"Topic: {req.topic or ''}\n"
-        f"Content: {req.text or ''}\n"
-        f"Audience level: {req.level or 'student'}\n"
-        "Explain the provided content."
-    )
-
-    result = await ask_gemini(
-        system, user, req.image_base64, req.pdf_base64
-    )
-
-    return {
-        "id": __import__("uuid").uuid4().hex,
+    record = {
+        "id": str(uuid.uuid4()),
         "type": "explain",
-        "title": req.topic or (req.text or "")[:60] or "From file",
-        "content": result,
-        "created_at": __import__("datetime").datetime.now(
-            __import__("datetime").timezone.utc
-        ).isoformat(),
+        "title": (req.topic or (req.text or "")[:60] or "From file"),
+        "content": explanation,
+        "created_at": datetime.now(timezone.utc).isoformat(),
     }
+    await db.history.insert_one(record.copy())
+    return record
 
-@router.post("/summarize")
-async def summarize(req: StudyRequest):
-    validate_input(req)
+
+@api_router.post("/summarize")
+async def summarize_content(req: SummarizeRequest):
+    if not (req.text or req.image_base64 or req.pdf_base64):
+        raise HTTPException(status_code=400, detail="Provide text, image, or pdf")
 
     system = (
-        "You are StudyMate AI's summarizer. "
-        "Provide a TL;DR, 5-8 key points, and why the content matters. "
-        "Use readable Markdown."
+        "You are StudyMateAI's summarizer. Produce a concise, scannable summary: "
+        "1) a TL;DR sentence, 2) 5-8 bullet key points, 3) 'Why it matters' line. "
+        "Use markdown. Bold the most important terms."
     )
-
-    result = await ask_gemini(
-        system, req.text or "Summarize the attached content.",
-        req.image_base64, req.pdf_base64
-    )
-
-    return {
-        "id": __import__("uuid").uuid4().hex,
-        "type": "summarize",
-        "title": (req.text or "")[:60] or "Summary from file",
-        "content": result,
-        "created_at": __import__("datetime").datetime.now(
-            __import__("datetime").timezone.utc
-        ).isoformat(),
-    }
-
-@router.post("/quiz")
-async def quiz(req: QuizRequest):
-    validate_input(req)
-
-    n = req.num_questions
-
-    system = (
-        "You are StudyMate AI's quiz generator. "
-        "Return ONLY a valid JSON array. Each object must contain "
-        "question, options (exactly four strings), correct_index (0-3), "
-        "and explanation."
-    )
-
-    user = (
-        f"Topic: {req.topic or ''}\n"
-        f"Source content: {req.text or ''}\n"
-        f"Generate exactly {n} multiple-choice questions."
-    )
-
-    raw = await ask_gemini(
-        system, user, req.image_base64, req.pdf_base64, True
-    )
+    user = req.text or "Summarize the attached content."
 
     try:
-        data = extract_json(raw)
-        if not isinstance(data, list):
-            raise ValueError("Expected a JSON array.")
+        summary = await _ask_gemini(system, user, req.image_base64, req.pdf_base64)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("summarize failed")
+        raise HTTPException(status_code=500, detail=f"AI error: {e}")
 
+    record = {
+        "id": str(uuid.uuid4()),
+        "type": "summarize",
+        "title": (req.text or "")[:60] or "Summary from file",
+        "content": summary,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    await db.history.insert_one(record.copy())
+    return record
+
+
+@api_router.post("/quiz")
+async def generate_quiz(req: QuizRequest):
+    if not (req.topic or req.text or req.image_base64 or req.pdf_base64):
+        raise HTTPException(status_code=400, detail="Provide topic, text, image, or pdf")
+
+    n = max(3, min(req.num_questions or 5, 10))
+    system = (
+        "You are StudyMateAI's quiz generator. Create multiple choice questions to test understanding. "
+        "Return ONLY valid JSON, no markdown fences, no commentary. "
+        "Format: a JSON array of objects with keys: question (string), options (array of 4 strings), "
+        "correct_index (integer 0-3), explanation (short string)."
+    )
+    parts = []
+    if req.topic:
+        parts.append(f"Topic: {req.topic}")
+    if req.text:
+        parts.append(f"Source content:\n{req.text}")
+    parts.append(f"Generate exactly {n} questions. Mix difficulty levels.")
+
+    try:
+        raw = await _ask_gemini(system, "\n\n".join(parts),
+                                req.image_base64, req.pdf_base64, json_mode=True)
+        data = _extract_json(raw)
+        if not isinstance(data, list):
+            raise ValueError("Expected JSON array")
         questions = []
         for item in data[:n]:
-            q = QuizItem(**item)
-            if len(q.options) == 4 and 0 <= q.correct_index <= 3:
-                questions.append(q.model_dump())
-
+            try:
+                q = QuizItem(**item)
+                if len(q.options) == 4 and 0 <= q.correct_index <= 3:
+                    questions.append(q.model_dump())
+            except Exception:
+                continue
         if not questions:
-            raise ValueError("No valid questions returned.")
+            raise ValueError("No valid questions parsed")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("quiz failed")
+        raise HTTPException(status_code=500, detail=f"AI error: {e}")
 
-    except Exception:
-        logger.exception("Quiz response parsing failed")
-        raise HTTPException(
-            status_code=502,
-            detail="The AI returned an invalid quiz. Please try again."
-        )
-
-    return {
-        "id": __import__("uuid").uuid4().hex,
+    record = {
+        "id": str(uuid.uuid4()),
         "type": "quiz",
         "title": req.topic or (req.text or "")[:60] or "Quiz from file",
         "questions": questions,
-        "created_at": __import__("datetime").datetime.now(
-            __import__("datetime").timezone.utc
-        ).isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
     }
+    await db.history.insert_one(record.copy())
+    return record
 
-@router.post("/flashcards")
-async def flashcards(req: FlashcardsRequest):
-    validate_input(req)
 
-    n = req.num_cards
+@api_router.post("/flashcards")
+async def generate_flashcards(req: FlashcardsRequest):
+    if not (req.topic or req.text or req.image_base64 or req.pdf_base64):
+        raise HTTPException(status_code=400, detail="Provide topic, text, image, or pdf")
 
+    n = max(4, min(req.num_cards or 8, 15))
     system = (
-        "You are StudyMate AI's flashcard maker. "
-        "Return ONLY a JSON array of objects containing front and back."
+        "You are StudyMateAI's flashcard maker. Create clear, atomic flashcards. "
+        "Return ONLY valid JSON, no markdown fences. "
+        "Format: a JSON array of objects with keys: front (the term/question, short), "
+        "back (concise definition with 1 mnemonic or example, max ~40 words)."
     )
-
-    user = (
-        f"Topic: {req.topic or ''}\n"
-        f"Source content: {req.text or ''}\n"
-        f"Generate exactly {n} useful study flashcards."
-    )
-
-    raw = await ask_gemini(
-        system, user, req.image_base64, req.pdf_base64, True
-    )
+    parts = []
+    if req.topic:
+        parts.append(f"Topic: {req.topic}")
+    if req.text:
+        parts.append(f"Source content:\n{req.text}")
+    parts.append(f"Generate exactly {n} flashcards.")
 
     try:
-        data = extract_json(raw)
+        raw = await _ask_gemini(system, "\n\n".join(parts),
+                                req.image_base64, req.pdf_base64, json_mode=True)
+        data = _extract_json(raw)
         if not isinstance(data, list):
-            raise ValueError("Expected a JSON array.")
-
+            raise ValueError("Expected JSON array")
         cards = []
         for item in data[:n]:
-            card = Flashcard(**item)
-            if card.front and card.back:
-                cards.append(card.model_dump())
-
+            try:
+                c = Flashcard(**item)
+                if c.front and c.back:
+                    cards.append(c.model_dump())
+            except Exception:
+                continue
         if not cards:
-            raise ValueError("No valid flashcards returned.")
+            raise ValueError("No valid cards parsed")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("flashcards failed")
+        raise HTTPException(status_code=500, detail=f"AI error: {e}")
 
-    except Exception:
-        logger.exception("Flashcard parsing failed")
-        raise HTTPException(
-            status_code=502,
-            detail="The AI returned invalid flashcards. Please try again."
-        )
-
-    return {
-        "id": __import__("uuid").uuid4().hex,
+    record = {
+        "id": str(uuid.uuid4()),
         "type": "flashcards",
         "title": req.topic or (req.text or "")[:60] or "Flashcards from file",
         "cards": cards,
-        "created_at": __import__("datetime").datetime.now(
-            __import__("datetime").timezone.utc
-        ).isoformat(),
+        "created_at": datetime.now(timezone.utc).isoformat(),
     }
+    await db.history.insert_one(record.copy())
+    return record
 
-app.include_router(router)
 
+@api_router.get("/history")
+async def list_history(limit: int = 50):
+    cursor = db.history.find({}, {"_id": 0}).sort("created_at", -1).limit(limit)
+    items = await cursor.to_list(length=limit)
+    return items
+
+
+@api_router.delete("/history/{item_id}")
+async def delete_history(item_id: str):
+    res = await db.history.delete_one({"id": item_id})
+    return {"deleted": res.deleted_count}
+
+
+app.include_router(api_router)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_credentials=True,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 @app.on_event("shutdown")
